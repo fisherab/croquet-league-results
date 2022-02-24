@@ -1,2 +1,13 @@
-"ts": "29/10/2021 00:18:22" ,    "op" : "update",    "Email of opponents captain" : "dr.s.m.fisher@gmail.com" , "Home player name 1":"qq"
 "ts": "29/10/2021 03:18:23" ,    "op" : "not there"
+"ts": "9/12/2021 23:49:05" ,     "op" : "delete"
+"ts": "09/1/2022 23:49:07" ,     "op" : "delete"
+"ts": "9/12/2021 23:49:00",      "op":"update", "Home player name 1": "Q", "Home player name 2": "Z", "Away team": "Caversham"
+"ts": "10/12/2021 23:49:01", 	 "op":"update", "Home player name 1": "Q", "Home player name 2": "Z", "Away team": "Caversham"
+"ts": "29/10/2021 00:10:02",     "op":"delete"
+"ts": "29/10/2021 00:18:25",     "op":"delete"
+"ts": "29/10/2021 00:18:21",     "op":"delete"
+"ts": "29/10/2021 00:18:22",     "op":"delete"
+
+"ts": "29/10/2021 00:18:23",     "op":"update", "Home player hoops scored 1": "26"
+"ts": "29/10/2021 00:18:24",     "op":"update", "Home player hoops scored 1": "26"
+
