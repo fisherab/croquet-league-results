@@ -10,6 +10,7 @@ from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 import html2text
 import argparse
+from pathlib import Path
 
 class Captain:
     ''' A Captain knows the name of his team along with his own name and email.'''
@@ -71,7 +72,7 @@ class League:
             else:
                 html += "<p>No games are expected</p>"
                 html += htmlSign()
-                sendMail(to,"Attempt to record unexpected game", html)
+                sendMail(to,"Attempt to record unexpected game", html, True)
                 
     def gamesTable(self):
         ''' Produce a table (in json format) showing all the games played in the league. '''
@@ -83,7 +84,46 @@ class League:
             row = g
             rows.append(row)
         return json.dumps(tdata)
-                
+
+    def reportResults(self):
+        '''email results to CroquetScores'''
+        # Find those results already reported. The results are in a file
+        # with multiple lines of json as you can't store the matches
+        # structure directly
+        alreadyDone = set()
+        fname = "reports/"+self.name+".json"
+        if Path(fname).is_file():
+            with open(fname) as f:
+                for jsonobj in f:
+                    key, val = json.loads(jsonobj)
+                    alreadyDone.add(tuple(key))
+        matches = {}
+        for g in self.games:
+            key = (g[9], g[10], g[0], g[4])
+            if key not in matches: matches[key]=[]
+            if g[3] > g[7]:
+                result = g[1] + " beat " + g[5] + " +" + str(g[3]-g[7]) + (g[8].lower() if g[3] == 26 else "(t)")
+            else:
+                result = g[5] + " beat " + g[1] + " +" + str(g[7]-g[3]) + (g[8].lower() if g[7] == 26 else "(t)")
+            matches[key].append(result)
+        
+       
+        for key, results in {key:val for key,val in matches.items() if key not in alreadyDone} .items():
+            subject = "SCF " + self.name + " League " + key[2] + " vs " + key[3] + " at " + key[1] + " on " + key[0]
+            html = "<p>"
+            for result in results:
+                html += result + "<br/>"
+            html += "</p>"
+            html += "<p>Steve Fisher <em>(SCF AC Leagues Manager)</em></p>"
+
+            sendMail("dr.s.m.fisher@gmail.com", subject, html, report=True)
+            
+            if reportWanted:
+                with open(fname,'w') as f:
+                    for key, value in matches.items():
+                        f.write(json.dumps([key,value]))
+                        f.write("\n")
+               
     def table(self):
         ''' Produce a league table (in json format). '''
         tdata = {}
@@ -314,7 +354,7 @@ def populateLeagues(data, dual, leagues):
             pa = datum['Peeling abbreviation ' + str(i)]
             league.record(h_team, h_name, h_handicap, h_score, a_team, a_name, a_handicap, a_score, pa, date, venue, to)
 
-def sendMail(to, subject, html):
+def sendMail(to, subject, html, report=False):
     '''Send an email
 
     Parameters: to - email of intended recipient
@@ -324,16 +364,17 @@ def sendMail(to, subject, html):
                 '''
 
     username = "ac-leagues-manager@southern-croquet.org.uk"
-    password = "e58Vv0C9?N_J"
+    with open("password") as p:
+        password = p.readline().rstrip("\n")
     sender_email = username
     text_maker = html2text.HTML2Text()
     text_maker.ignore_emphasis = True
     text = text_maker.handle(html)
 
     if printWanted:
-        print(text, "->", to)
+        print("\n\nTo: " + str(to) + "\nSubject: " + subject + "\n" + text)
 
-    if mailWanted:
+    if (mailWanted and not report) or (reportWanted and report):
         message = MIMEMultipart("alternative")
         message["Subject"] = subject
         message["From"] = sender_email
@@ -351,13 +392,15 @@ def main():
     ''' Main program. '''
 
     parser = argparse.ArgumentParser(description="Process SCF league results.")
-    parser.add_argument("-m","--sendmail", action="store_true")
-    parser.add_argument("-v","--verbose", action="store_true")
+    parser.add_argument("-m","--sendmail", action="store_true", help="send emails to those needing to fix something")
+    parser.add_argument("-v","--verbose", action="store_true", help="list text version of emails that will be sent with -m selected")
     parser.add_argument("-c", "--configfile", default="default")
+    parser.add_argument("-r", "--report", action="store_true", help="send email reports for ranking purposes")
     args = parser.parse_args()
-    global mailWanted, printWanted
+    global mailWanted, printWanted, reportWanted
     mailWanted = args.sendmail
     printWanted = args.verbose
+    reportWanted = args.report
 
     # Find the config file and read it
     captains, results, corrections = readConfig(args.configfile)
