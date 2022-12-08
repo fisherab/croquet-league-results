@@ -65,9 +65,9 @@ class League:
                 html += htmlSign()
                 sendMail(to,"Attempt to record unexpected game", html)
         else: 
-            key=away_team, home_team
+            key=a_team, h_team
             if key in self.matches:
-                self.matches[key].append((away_score, home_score))
+                self.matches[key].append((a_score, h_score))
                 self.games.append((h_team, h_name, h_handicap, h_score, a_team, a_name, a_handicap, a_score, pa, date, venue))
             else:
                 html += "<p>No games are expected</p>"
@@ -116,7 +116,7 @@ class League:
             html += "</p>"
             html += "<p>Steve Fisher <em>(SCF AC Leagues Manager)</em></p>"
 
-            sendMail("dr.s.m.fisher@gmail.com", subject, html, report=True)
+            sendMail("results@croquet.org.uk", subject, html, report=True)
             
             if reportWanted:
                 with open(fname,'w') as f:
@@ -202,6 +202,9 @@ def getCordict(corrections):
                 if ts in cordict:
                     print ("Corrections file has multiple occurences of timestamp", ts)
                 else:
+                    for key in cor.keys():
+                    	if key not in ["ts","op","Email address", "Email of opponents captain","League","Date","Venue","Home team","Away Team","Home player name 1","Home player handicap 1","Home player hoops scored 1","Away player name 1","Away player handicap 1","Away player hoops scored 1","Peeling abbreviation 1","Home player name 2","Home player handicap 2","Home player hoops scored 2","Away player name 2","Away player handicap 2","Away player hoops scored 2","Peeling abbreviation 2","Home player name 3","Home player handicap 3","Home player hoops scored 3","Away player name 3","Away player handicap 3","Away player hoops scored 3","Peeling abbreviation 3","Home player name 4","Home player handicap 4","Home player hoops scored 4","Away player name 4","Away player handicap 4","Away player hoops scored 4","Peeling abbreviation 4"]:
+                    	    print("Unexpected field", key, "in", jsonobj)
                     cordict[ts] = {key:val for key,val in cor.items() if key != 'ts'}
     return cordict
 
@@ -252,9 +255,9 @@ def readResults(results, cordict):
                 if keycount[key] == 1:
                     keycount[key] = 2
                    
-                    one = {key:val  for key, val in row.items() if key not in ['Home team','Away team','League','Date','Venue','Email address','Email of opponents captain','Timestamp'] }
-                    two = {key:val  for key, val in data[key].items() if key not in ['Home team','Away team','League','Date','Venue','Email address','Email of opponents captain','Timestamp'] }
-                    if (row['Email address'] != data[key]['Email of opponents captain']) or (row['Email of opponents captain'] != data[key]['Email address']):
+                    one = {key:val  for key, val in row.items() if key not in ['Home team','Away team','League','Date','Venue','Email address','Email of opponents captain','Timestamp','More games to record?'] }
+                    two = {key:val  for key, val in data[key].items() if key not in ['Home team','Away team','League','Date','Venue','Email address','Email of opponents captain','Timestamp','More games to record?'] }
+                    if (row['Email address'].lower().strip() != data[key]['Email of opponents captain'].lower().strip()) or (row['Email of opponents captain'].lower().strip() != data[key]['Email address'].lower().strip()):
                         html = htmlKey(row)
                         html += htmlCaptains(row)
                         html += htmlCaptains(data[key])
@@ -263,7 +266,6 @@ def readResults(results, cordict):
                     elif one != two:
                         looking = True
                         for i in range(1,5):
-                            if len(row['Home player hoops scored ' + str(i)].strip()) == 0: break
                             if not looking: break
                             for field in ['Home player hoops scored', 'Away player hoops scored','Home player name', 'Away player name', 'Home player handicap', 'Away player handicap', 'Peeling abbreviation']:
                                 oneData = row[field + ' ' + str(i)]
@@ -275,6 +277,8 @@ def readResults(results, cordict):
                                     sendMail([row['Email address'],data[key]['Email address']],"Inconsistent data for records", html)
                                     looking = False
                                     break
+                        if looking:
+                            print("\nProblem with " + textKey(row) + "\n" + str(one) + "\n" + str(two))
                     else:
                         dual[key] = True
                 else:
@@ -286,9 +290,9 @@ def readResults(results, cordict):
     if cordict: print("Some corrections have not been applied", cordict)              
 
     for one in {key: val for key, val in keycount.items() if val == 1 }.keys():
-        html = "<p>" + "Games between " + one[3] + " and " + one[4] + " in " + one[0] + " league at " + one[2] + " on " + one[1] + " have only a single report and so will be ignored.</p>"
         datum = data[one]
-        to = [datum["Email address"],datum["Email of opponents captain"]]
+        html = "<p>" + "Games between " + one[3] + " and " + one[4] + " in " + one[0] + " league at " + one[2] + " on " + one[1] + " have only a single report submitted by " + datum["Email address"] +  " and which cited you as the opposing captain of the day. Please submit the corresponding report via https://forms.gle/Ta7p2ooKKzJjFBuB9 so that the result can be recorded.</p>"
+        to = [datum["Email of opponents captain"]]
         sendMail(to, "Missing report", html)
 
     return data, dual
@@ -299,7 +303,7 @@ def htmlSign():
 def htmlCaptains(row):
     e1 = row['Email address']
     e2 = row['Email of opponents captain']
-    return "<p>Record with timestamp " + row['Timestamp'] + " shows self and opposing captain as <a href='mailto:" + e1 + "'>" +  e1 +"</a> and <a href='mailto:" + e2 + "'>" +  e2 +"</a></p>"
+    return "<p>Record with timestamp " + row['Timestamp'] + " shows self and opposing captain of the day as " + e1 + " and " + e2 +"</p>"
 
 def textKey(row):
     '''Return textual representation of the records key'''
