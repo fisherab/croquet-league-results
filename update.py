@@ -24,18 +24,23 @@ class Captain:
         return self.team + ": " + self.given + " " + self.surname + " <" + self.email +">"
 
 class League:
-    ''' A specific league with its name, set of captains and number of games in a match. '''
-    def __init__(self,name,captains, game_count):
-        ''' Store the minimum number of games for an outcome and the set of matches to be played. '''
+    ''' A specific league with its name and set of captains. '''
+    def __init__(self,name,captainGames):
+        ''' Store the set of matches to be played. '''
         self.name = name
-        self.captains = captains
+        self.captainGames = captainGames
         self.matches = {}
         self.games = []
-        for c1 in captains:
-            for c2 in captains:
+        self.planned_game_count = {}
+        self.min_game_count = {}
+        for cg1 in captainGames:
+            c1, g1 = cg1
+            for cg2 in captainGames:
+                c2, g2 = cg2
                 if c1.team < c2.team:
                     self.matches[c1.team, c2.team] = []
-        self.min_game_count = (game_count +2)//2
+                    self.planned_game_count[c1.team, c2.team] =  min(g1,g2)
+                    self.min_game_count[c1.team, c2.team] = (self.planned_game_count[c1.team, c2.team] + 2)//2
 
     def __str__(self):
         p = "League:" + self.name
@@ -43,13 +48,13 @@ class League:
         started = 0
         for m in self.matches:
             mc = len(self.matches[m])
-            if mc >= self.min_game_count: completed += 1
+            if mc >= self.min_game_count[m]: completed += 1
             elif mc > 0: started += 1
 
         return p + ", Completed:" + str(completed) + ", Started:" + str(started) + ", Not started:" + str(len(self.matches) - completed - started) 
     
     def record(self, h_team, h_name, h_handicap, h_score, a_team, a_name, a_handicap, a_score, pa, date, venue, to):
-        html =  "<p>Game between " + h_name + " of " + h_team + " and " + a_name + " of " + a_team + " in " + self.name + " league at " + venue + " on " + date + ".<p>"
+        keyText =  "Game between " + h_name + " of " + h_team + " and " + a_name + " of " + a_team + " in " + self.name + " league at " + venue + " on " + date
         ''' Record a single result trapping some errors'''
         if h_score == a_score:
             html += "<p>This game was recorded as drawn which is not an acceptable result.</p>"
@@ -61,18 +66,14 @@ class League:
                 self.matches[key].append((h_score,a_score))
                 self.games.append((h_team, h_name, h_handicap, h_score, a_team, a_name, a_handicap, a_score, pa, date, venue))
             else:
-                html += "<p>No games are expected</p>"
-                html += htmlSign()
-                sendMail(to,"Attempt to record unexpected game", html)
+                print (keyText, "was unexpected")
         else: 
             key=a_team, h_team
             if key in self.matches:
                 self.matches[key].append((a_score, h_score))
                 self.games.append((h_team, h_name, h_handicap, h_score, a_team, a_name, a_handicap, a_score, pa, date, venue))
             else:
-                html += "<p>No games are expected</p>"
-                html += htmlSign()
-                sendMail(to,"Attempt to record unexpected game", html, True)
+                print (keyText, "was unexpected.")
                 
     def gamesTable(self):
         ''' Produce a table (in json format) showing all the games played in the league. '''
@@ -133,43 +134,52 @@ class League:
         row = []
         rows.append(row)
         row.append("Team")
-        for c1 in self.captains:
+        for c1,g1 in self.captainGames:
             row.append(c1.team)
-        row.extend(["Played","Pts"])
+        row.extend(["Played","Pts","games"])
         
-        for c1 in self.captains:
-           
+        for c1,g1 in self.captainGames:
             played = 0
             pts = 0
+            games = 0
             row = []
             rows.append(row)
             row.append(c1.team)
-            for c2 in self.captains:
+            for c2,g2 in self.captainGames:
                 c1score = 0
                 c2score = 0
                 if c1.team < c2.team:
                     matches = self.matches[c1.team, c2.team]
                     for res in matches:
-                        if res[0] > res[1]: c1score += 1
-                        else: c2score += 1
+                        if res[0] > res[1]:
+                            c1score += 1
+                            games += 1/self.planned_game_count[c1.team, c2.team]
+                        else:
+                            c2score += 1
+                            games -= 1/self.planned_game_count[c1.team, c2.team]
                     row.append(str(c1score) +"-"+ str(c2score))
-                    if len(matches) >= self.min_game_count:
+                    if len(matches) >= self.min_game_count[c1.team, c2.team]:
                         played += 1
                         if c1score > c2score: pts +=2
                         elif c1score == c2score: pts +=1
                 elif c1.team > c2.team:
                     matches = self.matches[c2.team, c1.team]
                     for res in matches:
-                        if res[0] > res[1]: c2score += 1
-                        else: c1score += 1
+                        if res[0] > res[1]:
+                            c2score += 1
+                            games -= 1/self.planned_game_count[c2.team, c1.team]
+                        else:
+                            c1score += 1
+                            games += 1/self.planned_game_count[c2.team, c1.team]
                     row.append(str(c1score) +"-"+ str(c2score))
-                    if len(matches) >= self.min_game_count:
+                    if len(matches) >= self.min_game_count[c2.team, c1.team]:
                         played += 1
                         if c1score > c2score: pts +=2
                         elif c1score == c2score: pts +=1
                 else: row.append("")
             row.append(str(played)) 
             row.append(str(pts))
+            row.append(str(round(games,2)))
         
         return json.dumps(tdata)
 
@@ -203,7 +213,7 @@ def getCordict(corrections):
                     print ("Corrections file has multiple occurences of timestamp", ts)
                 else:
                     for key in cor.keys():
-                    	if key not in ["ts","op","Email address", "Email of opponents captain","League","Date","Venue","Home team","Away Team","Home player name 1","Home player handicap 1","Home player hoops scored 1","Away player name 1","Away player handicap 1","Away player hoops scored 1","Peeling abbreviation 1","Home player name 2","Home player handicap 2","Home player hoops scored 2","Away player name 2","Away player handicap 2","Away player hoops scored 2","Peeling abbreviation 2","Home player name 3","Home player handicap 3","Home player hoops scored 3","Away player name 3","Away player handicap 3","Away player hoops scored 3","Peeling abbreviation 3","Home player name 4","Home player handicap 4","Home player hoops scored 4","Away player name 4","Away player handicap 4","Away player hoops scored 4","Peeling abbreviation 4"]:
+                    	if key not in ["ts","op","Email address", "Email of opponents captain","League","Date","Venue","Home team","Away team","Home player name 1","Home player handicap 1","Home player hoops scored 1","Away player name 1","Away player handicap 1","Away player hoops scored 1","Peeling abbreviation 1","Home player name 2","Home player handicap 2","Home player hoops scored 2","Away player name 2","Away player handicap 2","Away player hoops scored 2","Peeling abbreviation 2","Home player name 3","Home player handicap 3","Home player hoops scored 3","Away player name 3","Away player handicap 3","Away player hoops scored 3","Peeling abbreviation 3","Home player name 4","Home player handicap 4","Home player hoops scored 4","Away player name 4","Away player handicap 4","Away player hoops scored 4","Peeling abbreviation 4"]:
                     	    print("Unexpected field", key, "in", jsonobj)
                     cordict[ts] = {key:val for key,val in cor.items() if key != 'ts'}
     return cordict
@@ -211,18 +221,16 @@ def getCordict(corrections):
 def readResults(results, cordict):
     ''' Read and correct the results. Each result record has a key of
     league, date, venue, home_team and away_team. If a game has been
-    recorded twice then it should be found twice and is marked as a dual
-    record. It is only stored the first time it is found.
+    recorded more than once an error message is displayed and results
+    for that key will be removed.
 
-    Returns: data - the data as a list of rows 
-             dual - key of useful data that has been recorded just twice 
+    Returns: data - the good data as a list of rows 
 
     '''
     with open(results, newline='') as csvfile:
         reader = csv.DictReader(csvfile)
 
         data = {}
-        dual = {}
         keycount = {}
   
         for row in reader:
@@ -254,48 +262,18 @@ def readResults(results, cordict):
             else:
                 if keycount[key] == 1:
                     keycount[key] = 2
-                   
-                    one = {key:val  for key, val in row.items() if key not in ['Home team','Away team','League','Date','Venue','Email address','Email of opponents captain','Timestamp','More games to record?'] }
-                    two = {key:val  for key, val in data[key].items() if key not in ['Home team','Away team','League','Date','Venue','Email address','Email of opponents captain','Timestamp','More games to record?'] }
-                    if (row['Email address'].lower().strip() != data[key]['Email of opponents captain'].lower().strip()) or (row['Email of opponents captain'].lower().strip() != data[key]['Email address'].lower().strip()):
-                        html = htmlKey(row)
-                        html += htmlCaptains(row)
-                        html += htmlCaptains(data[key])
-                        html += htmlSign()
-                        sendMail([row['Email address'],data[key]['Email address']],"Inconsistent captains for submitted results", html)
-                    elif one != two:
-                        looking = True
-                        for i in range(1,5):
-                            if not looking: break
-                            for field in ['Home player hoops scored', 'Away player hoops scored','Home player name', 'Away player name', 'Home player handicap', 'Away player handicap', 'Peeling abbreviation']:
-                                oneData = row[field + ' ' + str(i)]
-                                twoData = data[key][field + ' ' + str(i)]
-                                if oneData != twoData:
-                                    html = htmlKey(row)
-                                    html += "<p>" + field + " for game " + str(i) + " is recorded as " + oneData + " and as " + twoData + "</p>"
-                                    html += htmlSign()
-                                    sendMail([row['Email address'],data[key]['Email address']],"Inconsistent data for records", html)
-                                    looking = False
-                                    break
-                        if looking:
-                            print("\nProblem with " + textKey(row) + "\n" + str(one) + "\n" + str(two))
-                    else:
-                        dual[key] = True
+                    print ("Duplicate results for ",key, "submitted by", row['Email address'], "and", data[key]['Email address'])
                 else:
                     keycount[key] += 1
-                    del dual[key]
-                    print ("Two many entries for", key)
-
+                    
+    # Only keep data reported once
+    for multi in {key: val for key, val in keycount.items() if val > 1 }.keys():
+        del data[multi]
+  
     # Report other problems
     if cordict: print("Some corrections have not been applied", cordict)              
 
-    for one in {key: val for key, val in keycount.items() if val == 1 }.keys():
-        datum = data[one]
-        html = "<p>" + "Games between " + one[3] + " and " + one[4] + " in " + one[0] + " league at " + one[2] + " on " + one[1] + " have only a single report submitted by " + datum["Email address"] +  " and which cited you as the opposing captain of the day. Please submit the corresponding report via https://forms.gle/Ta7p2ooKKzJjFBuB9 so that the result can be recorded.</p>"
-        to = [datum["Email of opponents captain"]]
-        sendMail(to, "Missing report", html)
-
-    return data, dual
+    return data.values()
 
 def htmlSign():
     return "<p>Please reconcile these differences and reply-all to this email with an explanation</p><p>Steve Fisher <em>(SCF AC Leagues Manager)</em></p>"
@@ -320,32 +298,32 @@ def getLeagues(captains):
     '''   
     A = set()
     B = set()
+    C = set()
     HN = set()
     HS = set()
     leagues = {}
+    names = ['A Level','B Level','C Level','Hcap N','Hcap S']
+    ls = [A,B,C,HN,HS]
     with open(captains, newline='') as csvfile:
         reader = csv.DictReader(csvfile)
         for row in reader:
             captain = Captain(row['Club'], row['Given'], row['Surname'], row['Email'])
-            if row['A Level'] == "1": A.add(captain)
-            if row['B Level'] == "1": B.add(captain)
-            if row['Hcap N'] == "1": HN.add(captain)
-            if row['Hcap S'] == "1": HS.add(captain)
+            for name,league in zip(names,ls):
+            	if int(row[name]) > 1: league.add((captain,int(row[name])))
 
-    for name,league, game_count in zip(['A Level','B Level','Hcap N','Hcap S'],[A,B,HN,HS],[2,3,4,4]):
-        leagues[name] = League(name, league, game_count)
+    for name,league in zip(names,ls):
+        leagues[name] = League(name, league)
     return leagues
 
-def populateLeagues(data, dual, leagues):
+def populateLeagues(data, leagues):
     '''Populate the leagues.'''
-    for d in dual:
-        datum = data[d]
+    for datum in data:
         date = datum["Date"]
         venue = datum["Venue"]
-        league_name = d[0]
+        league_name = datum["League"]
         league = leagues[league_name]
-        h_team = d[3]
-        a_team = d[4]
+        h_team = datum["Home team"]
+        a_team = datum["Away team"]
         to = [datum["Email address"],datum["Email of opponents captain"]]
         for i in range(1,5):
             if len(datum['Home player hoops scored ' + str(i)].strip()) == 0: break
@@ -413,13 +391,13 @@ def main():
     cordict = getCordict(corrections)
     
     # Now read the results
-    data, dual = readResults(results, cordict)
+    data = readResults(results, cordict)
 
     # Find what matches should be played
     leagues = getLeagues(captains)
     
-    # Now fill the league tales with "dual" results
-    populateLeagues(data, dual, leagues)
+    # Now fill the league tales with results
+    populateLeagues(data, leagues)
               
     # Now produce tables
     for name in leagues:
