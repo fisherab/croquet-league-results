@@ -25,7 +25,7 @@ class Captain:
 
 class League:
     ''' A specific league with its name and set of captains. '''
-    def __init__(self,name,captainGames):
+    def __init__(self,name,captainGames,people):
         ''' Store the set of matches to be played. '''
         self.name = name
         self.captainGames = captainGames
@@ -33,6 +33,7 @@ class League:
         self.games = []
         self.planned_game_count = {}
         self.min_game_count = {}
+        self.people = people
         for cg1 in captainGames:
             c1, g1 = cg1
             for cg2 in captainGames:
@@ -53,25 +54,23 @@ class League:
 
         return p + ", Completed:" + str(completed) + ", Started:" + str(started) + ", Not started:" + str(len(self.matches) - completed - started) 
     
-    def record(self, h_team, h_name, h_handicap, h_score, a_team, a_name, a_handicap, a_score, pa, date, venue, to):
+    def record(self, h_team, h_name, h_handicap, h_score, a_team, a_name, a_handicap, a_score, pa, date, venue, reporter, witness, timestamp):
         keyText =  "Game between " + h_name + " of " + h_team + " and " + a_name + " of " + a_team + " in " + self.name + " league at " + venue + " on " + date
         ''' Record a single result trapping some errors'''
         if h_score == a_score:
-            html += "<p>This game was recorded as drawn which is not an acceptable result.</p>"
-            html += htmlSign()
-            sendMail(to,"Attempt to record drawn game", html)
+            print (keyText, "was recorded as drawn which is not an acceptable result.")
         elif (h_team < a_team): 
             key=h_team, a_team
             if key in self.matches:
                 self.matches[key].append((h_score,a_score))
-                self.games.append((h_team, h_name, h_handicap, h_score, a_team, a_name, a_handicap, a_score, pa, date, venue))
+                self.games.append((h_team, h_name, h_handicap, h_score, a_team, a_name, a_handicap, a_score, pa, date, venue, reporter, witness, timestamp))
             else:
-                print (keyText, "was unexpected")
+                print (keyText, "was unexpected.")
         else: 
             key=a_team, h_team
             if key in self.matches:
                 self.matches[key].append((a_score, h_score))
-                self.games.append((h_team, h_name, h_handicap, h_score, a_team, a_name, a_handicap, a_score, pa, date, venue))
+                self.games.append((h_team, h_name, h_handicap, h_score, a_team, a_name, a_handicap, a_score, pa, date, venue, reporter, witness, timestamp))
             else:
                 print (keyText, "was unexpected.")
                 
@@ -107,7 +106,6 @@ class League:
             else:
                 result = g[5] + " beat " + g[1] + " +" + str(g[7]-g[3]) + (g[8].lower() if g[7] == 26 else "(t)")
             matches[key].append(result)
-        
        
         for key, results in {key:val for key,val in matches.items() if key not in alreadyDone} .items():
             subject = "SCF " + self.name + " League " + key[2] + " vs " + key[3] + " at " + key[1] + " on " + key[0]
@@ -117,13 +115,70 @@ class League:
             html += "</p>"
             html += "<p>Steve Fisher <em>(SCF AC Leagues Manager)</em></p>"
 
-            sendMail("results@croquet.org.uk", subject, html, report=True)
+            if sendHtmlMail(self.people["rankings"], subject, html, reportWanted):
+                if reportWanted:
+                    with open(fname,'w') as f:
+                        for key, value in matches.items():
+                            f.write(json.dumps([key,value]))
+                            f.write("\n")
+
+    def reportToOppos(self):
+        '''email results to opposition and observer'''
+        # Find those results already reported. The results are in a file
+        # with multiple lines of json as you can't store the matches
+        # structure directly
+
+        # Read in set of keys already processed
+        alreadyDone = set()
+        fname = "reports/"+self.name+" oando.json"
+        if Path(fname).is_file():
+            with open(fname) as f:
+                for jsonobj in f:
+                    key = json.loads(jsonobj)
+                    alreadyDone.add(tuple(key))
+                    
+        matches = {}
+        meta = {}
+        for g in self.games:
+            key = (g[9], g[10], g[0], g[4])
+            if key not in alreadyDone:
+                if key not in matches:
+                    matches[key]=[]
+                    meta[key]=g[11:]
+                result = list(g[1:4])
+                result.extend(g[5:9])
+                matches[key].append(tuple(result))
             
-            if reportWanted:
-                with open(fname,'w') as f:
-                    for key, value in matches.items():
-                        f.write(json.dumps([key,value]))
-                        f.write("\n")
+        for key, results in matches.items():
+            report,witness,ts = meta[key]
+
+            resultHtml = "<table><tr><th>Home</th><th>Name</th><th>Handicap</th><th>Hoops</th>"
+            resultHtml += "<th>Away</th><th>Name</th><th>Handicap</th><th>Hoops</th><th>Code<th></tr>"
+            for result in results:
+                resultHtml += "<tr><td>" + key[2] + "</td><td>" + result[0] + "</td><td>" + result[1] + "</td><td>" + str(result[2]) + "</td>"
+                resultHtml += "<td>" + key[3] + "</td><td>" + result[3] + "</td><td>" + result[4] + "</td><td>" + str(result[5]) + "</td><td>" + result[6] + "</td></tr>"
+            resultHtml += "</table>"
+
+            subject = "SCF " + self.name + " League " + key[2] + " vs " + key[3] + " at " + key[1] + " on " + key[0]
+
+            html = "<p>" + witness + ",</p>"
+            ts1, ts2 = ts.split(" ")
+            html += "<p>The results below were reported by " + report + " on " + ts1 + " at " + ts2 +  "</p><p>"
+            html += resultHtml + "</p>"
+            html += "<p>Please report any disagreements.</p>"
+            html += "<p>Steve Fisher <em>(SCF AC Leagues Manager)</em></p>"
+ 
+            if sendHtmlMail([report,witness], subject, html, mailWanted):
+                html = "<p>" + self.people["observer"] + ",</p>"
+                html += "<p>The results below were reported by " + report + " on " + ts1 + " at " + ts2
+                html += " and have just been sent to " + witness + " in case they wish to complain. </p><p>"
+                html += resultHtml + "</p>"
+                html += "<p>Steve Fisher <em>(SCF AC Leagues Manager)</em></p>"
+                if sendHtmlMail(self.people["observer"], subject, html, mailWanted):
+                    if mailWanted:
+                        with open(fname,'a') as f:
+                            f.write(json.dumps(key))
+                            f.write("\n")
                
     def table(self):
         ''' Produce a league table (in json format). '''
@@ -193,7 +248,11 @@ def readConfig(configFile):
     corrections = config.get("files","corrections")
     results = config.get("files", "results")
     captains = config.get("files", "captains")
-    return captains, results, corrections
+    people = {}
+    people["rankings"] = config.get("people","rankings")
+    people["observer"] = config.get("people", "observer")               
+    
+    return captains, results, corrections, people
 
 def getCordict(corrections):
     ''' Read the corrections file and return a dictionary indexed by
@@ -275,21 +334,7 @@ def readResults(results, cordict):
 
     return data.values()
 
-def htmlSign():
-    return "<p>Please reconcile these differences and reply-all to this email with an explanation</p><p>Steve Fisher <em>(SCF AC Leagues Manager)</em></p>"
-
-def htmlCaptains(row):
-    e1 = row['Email address']
-    e2 = row['Email of opponents captain']
-    return "<p>Record with timestamp " + row['Timestamp'] + " shows self and opposing captain of the day as " + e1 + " and " + e2 +"</p>"
-
-def textKey(row):
-    '''Return textual representation of the records key'''
-    return "Games between " + row['Home team'] + " and " + row['Away team'] + " in " + row['League'] + " league at " + row['Venue'] + " on " + row['Date']
-
-def htmlKey(row): return "<p>" + textKey(row) + "</p>"
-
-def getLeagues(captains):
+def getLeagues(captains, people):
     ''' Derive an array of leagues indexed by name from the captains csv
     file.
 
@@ -312,7 +357,7 @@ def getLeagues(captains):
             	if int(row[name]) > 1: league.add((captain,int(row[name])))
 
     for name,league in zip(names,ls):
-        leagues[name] = League(name, league)
+        leagues[name] = League(name, league, people)
     return leagues
 
 def populateLeagues(data, leagues):
@@ -324,7 +369,9 @@ def populateLeagues(data, leagues):
         league = leagues[league_name]
         h_team = datum["Home team"]
         a_team = datum["Away team"]
-        to = [datum["Email address"],datum["Email of opponents captain"]]
+        reporter = datum["Email address"]
+        witness = datum["Email of opponents captain"]
+        ts = datum["Timestamp"]
         for i in range(1,5):
             if len(datum['Home player hoops scored ' + str(i)].strip()) == 0: break
             h_score = int(datum['Home player hoops scored ' + str(i)])
@@ -334,9 +381,9 @@ def populateLeagues(data, leagues):
             h_handicap = datum['Home player handicap ' + str(i)]
             a_handicap = datum['Away player handicap ' + str(i)]
             pa = datum['Peeling abbreviation ' + str(i)]
-            league.record(h_team, h_name, h_handicap, h_score, a_team, a_name, a_handicap, a_score, pa, date, venue, to)
+            league.record(h_team, h_name, h_handicap, h_score, a_team, a_name, a_handicap, a_score, pa, date, venue, reporter, witness, ts)
 
-def sendMail(to, subject, html, report=False):
+def sendHtmlMail(to, subject, html, actionWanted):
     '''Send an email
 
     Parameters: to - email of intended recipient
@@ -354,9 +401,11 @@ def sendMail(to, subject, html, report=False):
     text = text_maker.handle(html)
 
     if printWanted:
-        print("\n\nTo: " + str(to) + "\nSubject: " + subject + "\n" + text)
+        print("\nTo: " + str(to) + "\nSubject: " + subject)
+        for line in text.split("\n"):
+            if line.strip() != "": print(line)
 
-    if (mailWanted and not report) or (reportWanted and report):
+    if actionWanted:
         message = MIMEMultipart("alternative")
         message["Subject"] = subject
         message["From"] = sender_email
@@ -368,24 +417,33 @@ def sendMail(to, subject, html, report=False):
 
         with smtplib.SMTP_SSL("mail.southern-croquet.org.uk", 465, context=context) as server:
             server.login(username, password)
-            server.sendmail(sender_email,to,message.as_string())
+#           server.set_debuglevel(1)
+            try:
+                fails = server.sendmail(sender_email,to,message.as_string())
+            except smtplib.SMTPRecipientsRefused as inst:
+                print (inst)
+                return False
+            if len(fails) >0: print (fails)
+            return len(fails) == 0
+    else:
+        return True
         
 def main():
     ''' Main program. '''
 
     parser = argparse.ArgumentParser(description="Process SCF league results.")
-    parser.add_argument("-m","--sendmail", action="store_true", help="send emails to those needing to fix something")
-    parser.add_argument("-v","--verbose", action="store_true", help="list text version of emails that will be sent with -m selected")
+    parser.add_argument("-m", "--mailWanted", action="store_true", help="send emails")
+    parser.add_argument("-r", "--reportWanted", action="store_true", help="send rankings")
+    parser.add_argument("-v", "--verbose", action="store_true", help="list text version of emails that will be sent unless -n selected")
     parser.add_argument("-c", "--configfile", default="default")
-    parser.add_argument("-r", "--report", action="store_true", help="send email reports for ranking purposes")
     args = parser.parse_args()
     global mailWanted, printWanted, reportWanted
-    mailWanted = args.sendmail
+    mailWanted = args.mailWanted
     printWanted = args.verbose
-    reportWanted = args.report
+    reportWanted = args.reportWanted
 
     # Find the config file and read it
-    captains, results, corrections = readConfig(args.configfile)
+    captains, results, corrections, people = readConfig(args.configfile)
    
     # Read in the file of corrections
     cordict = getCordict(corrections)
@@ -394,20 +452,21 @@ def main():
     data = readResults(results, cordict)
 
     # Find what matches should be played
-    leagues = getLeagues(captains)
+    leagues = getLeagues(captains, people)
     
     # Now fill the league tales with results
     populateLeagues(data, leagues)
               
     # Now produce tables
     for name in leagues:
-         league = leagues[name]
-         print (league)
-         with open("tables/"+name+"_table.json",'w') as f:
-             f.write(league.table())
-         with open("tables/"+name+"_games.json",'w') as f:
-             f.write(league.gamesTable())
-         if name in ("A Level", "B Level"):
-             league.reportResults()
-    
+        league = leagues[name]
+        print (league)
+        with open("tables/"+name+"_table.json",'w') as f:
+            f.write(league.table())
+        with open("tables/"+name+"_games.json",'w') as f:
+            f.write(league.gamesTable())
+        if name in ("A Level", "B Level", "C Level"):
+            league.reportResults()
+            league.reportToOppos()
+        
 if __name__ == '__main__': main()
