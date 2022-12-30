@@ -165,6 +165,7 @@ class League:
             ts1, ts2 = ts.split(" ")
             html += "<p>The results below were reported by " + report + " on " + ts1 + " at " + ts2 +  "</p><p>"
             html += resultHtml + "</p>"
+            html += "<p>The results will be visible at https://southern-croquet.org.uk/blog/category/leagues/ within about 15 minutes.</p>"
             html += "<p>Please report any disagreements.</p>"
             html += "<p>Steve Fisher <em>(SCF AC Leagues Manager)</em></p>"
  
